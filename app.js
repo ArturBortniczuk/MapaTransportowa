@@ -108,7 +108,7 @@ addPinForm.addEventListener('submit', async (e) => {
 });
 
 const addMarker = debounce(async function(lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek) {
-    // Sprawdź, czy marker o tych współrzędnych już istnieje
+    console.log('Dodawanie markera:', { lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek });    // Sprawdź, czy marker o tych współrzędnych już istnieje
     const snapshot = await database.ref('markers').orderByChild('lat').equalTo(lat).once('value');
     let existingMarker = null;
     snapshot.forEach((childSnapshot) => {
@@ -116,7 +116,7 @@ const addMarker = debounce(async function(lat, lon, name, cargo, carType, fillLe
         if (markerData.lon === lon && markerData.active) {
             existingMarker = { key: childSnapshot.key, ...markerData };
             return true; // Przerywa pętlę forEach
-        }
+        }, 300);
     });
 
     let markerId;
@@ -170,6 +170,7 @@ async function deleteMarker(markerId) {
 }
 
 function loadMarkers() {
+    console.log('Rozpoczęcie ładowania markerów');
     database.ref('markers').orderByChild('active').equalTo(true).once('value', (snapshot) => {
         // Wyczyść istniejące markery
         Object.values(markers).forEach(marker => map.removeLayer(marker));
@@ -180,20 +181,18 @@ function loadMarkers() {
             const markerData = childSnapshot.val();
             const { lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek, recordName } = markerData;
 
+            console.log('Ładowanie markera:', markerId, carType, fillLevel, dayOfWeek);
+
             const iconType = carTypeMap[carType];
             const iconUrl = `static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
             
-            const icon = L.icon({
-                iconUrl: iconUrl,
+            const icon = L.divIcon({
+                className: 'custom-icon',
+                html: `<div style="background-image: url('${iconUrl}'); width: 32px; height: 32px; background-size: contain;"></div>`,
                 iconSize: [32, 32],
                 iconAnchor: [16, 32],
                 popupAnchor: [0, -32]
             });
-            icon.onerror = function() {
-                console.error('Błąd ładowania ikony:', iconUrl);
-                // Użyj domyślnej ikony w przypadku błędu
-                this.src = 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png';
-            };
 
             const marker = L.marker([lat, lon], { icon: icon, day: dayOfWeek }).addTo(map);
             markers[markerId] = marker;
@@ -211,6 +210,7 @@ function loadMarkers() {
             marker.bindPopup(popupContent);
         });
         filterMarkers();
+        console.log('Zakończenie ładowania markerów');
     });
 }
 
@@ -267,3 +267,12 @@ const refreshButton = document.createElement('button');
 refreshButton.textContent = 'Odśwież markery';
 refreshButton.onclick = refreshMarkers;
 document.body.appendChild(refreshButton);
+
+function checkStaticFolder() {
+    fetch('/static/test.txt')
+        .then(response => response.text())
+        .then(data => console.log('Zawartość test.txt:', data))
+        .catch(error => console.error('Błąd wczytywania test.txt:', error));
+}
+
+checkStaticFolder();
