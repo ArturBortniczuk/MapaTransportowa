@@ -1,13 +1,21 @@
-// Inicjalizacja mapy
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 const map = L.map('map').setView([52.0, 19.0], 7);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
-// Referencja do bazy danych Firebase
 const database = firebase.database();
-
-// Pobieranie elementów DOM
 const addPinButton = document.getElementById('addPinButton');
 const legendButton = document.getElementById('legendButton');
 const closeLegendButton = document.getElementById('closeLegendButton');
@@ -19,7 +27,24 @@ const fillLevelValue = document.getElementById('fillLevelValue');
 
 let markers = {};
 
-// Obsługa przycisków i paneli
+const carTypeMap = {
+    'blaszak_bialystok': 'blaszak',
+    'blaszak_zielonka': 'blaszak',
+    'firanka_bialystok': 'firanka',
+    'firanka_zielonka': 'firanka',
+    'man_stary_bialystok': 'man',
+    'man_nowy_bialystok': 'man',
+    'man_zielonka': 'man'
+};
+
+const polishDayNames = {
+    'monday': 'Poniedziałek',
+    'tuesday': 'Wtorek',
+    'wednesday': 'Środa',
+    'thursday': 'Czwartek',
+    'friday': 'Piątek'
+};
+
 addPinButton.addEventListener('click', () => {
     addPinPanel.classList.toggle('visible');
     addPinButton.classList.toggle('panel-visible');
@@ -52,7 +77,6 @@ fillLevelSlider.addEventListener('input', (e) => {
     fillLevelValue.textContent = e.target.value;
 });
 
-// Obsługa formularza dodawania pinezki
 addPinForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('pinName').value;
@@ -83,104 +107,108 @@ addPinForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Funkcja dodawania markera
-async function addMarker(lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek, id = null) {
-    const carTypeMap = {
-        'blaszak_bialystok': 'blaszak',
-        'blaszak_zielonka': 'blaszak',
-        'firanka_bialystok': 'firanka',
-        'firanka_zielonka': 'firanka',
-        'man_stary_bialystok': 'man',
-        'man_nowy_bialystok': 'man',
-        'man_zielonka': 'man'
-    };
-
-    const polishDayNames = {
-        'monday': 'Poniedziałek',
-        'tuesday': 'Wtorek',
-        'wednesday': 'Środa',
-        'thursday': 'Czwartek',
-        'friday': 'Piątek'
-    };
-
-    const iconType = carTypeMap[carType];
-    const iconUrl = `static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
-    
-    console.log('Próba załadowania ikony:', iconUrl);
-    
-    const icon = L.icon({
-        iconUrl: iconUrl,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
-        popupAnchor: [0, -32]
+const addMarker = debounce(async function(lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek) {
+    // Sprawdź, czy marker o tych współrzędnych już istnieje
+    const snapshot = await database.ref('markers').orderByChild('lat').equalTo(lat).once('value');
+    let existingMarker = null;
+    snapshot.forEach((childSnapshot) => {
+        const markerData = childSnapshot.val();
+        if (markerData.lon === lon && markerData.active) {
+            existingMarker = { key: childSnapshot.key, ...markerData };
+            return true; // Przerywa pętlę forEach
+        }
     });
-    
-    const marker = L.marker([lat, lon], { icon: icon, day: dayOfWeek }).addTo(map);
-    
-    if (!id) {
-        // Dodaj marker do Firebase
-        const newMarkerRef = database.ref('markers').push();
-        id = newMarkerRef.key;
-        await newMarkerRef.set({
-            lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek
+
+    let markerId;
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0].replace(/-/g, ''); // Format: YYYYMMDD
+
+    // Pobierz aktualny licznik dla danego dnia
+    const counterRef = database.ref('counters/' + dateStr);
+    const counterSnapshot = await counterRef.once('value');
+    let counter = counterSnapshot.val() || 0;
+    counter++;
+
+    // Utwórz nową nazwę rekordu
+    const newRecordName = `${dateStr}-${counter.toString().padStart(3, '0')}`;
+
+    if (existingMarker) {
+        // Marker już istnieje, zaktualizuj go
+        markerId = existingMarker.key;
+        await database.ref('markers/' + markerId).update({
+            name, cargo, carType, fillLevel, city, dayOfWeek,
+            recordName: newRecordName,
+            active: true
         });
+        console.log('Marker zaktualizowany:', markerId);
+    } else {
+        // Dodaj nowy marker
+        const newMarkerRef = database.ref('markers').push();
+        markerId = newMarkerRef.key;
+        await newMarkerRef.set({
+            lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek,
+            recordName: newRecordName,
+            active: true
+        });
+        console.log('Nowy marker dodany:', markerId);
     }
 
-    markers[id] = marker;
+    // Zaktualizuj licznik
+    await counterRef.set(counter);
 
-    const popupContent = `
-        <b>${name}</b><br>
-        Miasto: ${city}<br>
-        Auto: ${carType.replace(/_/g, ' ')}<br>
-        Dzień: ${polishDayNames[dayOfWeek]}<br>
-        Towar: ${cargo}<br>
-        Zapełnienie: ${fillLevel}/5<br>
-        <button class="delete-button" onclick="deleteMarker('${id}')">Usuń pinezkę</button>
-    `;
-    marker.bindPopup(popupContent);
+    refreshMarkers();
+}, 300);
 
-    filterMarkers();
-}
-
-// Funkcja usuwania markera
 async function deleteMarker(markerId) {
     if (markers[markerId]) {
         map.removeLayer(markers[markerId]);
         delete markers[markerId];
-        // Usuń marker z Firebase
-        await database.ref('markers/' + markerId).remove();
-        filterMarkers();
+        // Zamiast usuwać, ustawiamy flagę active na false
+        await database.ref('markers/' + markerId).update({ active: false });
+        console.log('Marker oznaczony jako nieaktywny:', markerId);
     }
 }
 
-// Funkcja wczytywania markerów
 function loadMarkers() {
-    database.ref('markers').on('value', (snapshot) => {
+    database.ref('markers').orderByChild('active').equalTo(true).once('value', (snapshot) => {
         // Wyczyść istniejące markery
         Object.values(markers).forEach(marker => map.removeLayer(marker));
         markers = {};
 
-        const data = snapshot.val();
-        if (data) {
-            Object.entries(data).forEach(([id, markerData]) => {
-                addMarker(
-                    markerData.lat,
-                    markerData.lon,
-                    markerData.name,
-                    markerData.cargo,
-                    markerData.carType,
-                    markerData.fillLevel,
-                    markerData.city,
-                    markerData.dayOfWeek,
-                    id
-                );
+        snapshot.forEach((childSnapshot) => {
+            const markerId = childSnapshot.key;
+            const markerData = childSnapshot.val();
+            const { lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek, recordName } = markerData;
+
+            const iconType = carTypeMap[carType];
+            const iconUrl = `static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
+            
+            const icon = L.icon({
+                iconUrl: iconUrl,
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -32]
             });
-        }
+
+            const marker = L.marker([lat, lon], { icon: icon, day: dayOfWeek }).addTo(map);
+            markers[markerId] = marker;
+
+            const popupContent = `
+                <b>${name}</b><br>
+                Numer rekordu: ${recordName}<br>
+                Miasto: ${city}<br>
+                Auto: ${carType.replace(/_/g, ' ')}<br>
+                Dzień: ${polishDayNames[dayOfWeek]}<br>
+                Towar: ${cargo}<br>
+                Zapełnienie: ${fillLevel}/5<br>
+                <button class="delete-button" onclick="deleteMarker('${markerId}')">Usuń pinezkę</button>
+            `;
+            marker.bindPopup(popupContent);
+        });
         filterMarkers();
     });
 }
 
-// Funkcja filtrowania markerów
 function filterMarkers() {
     const activeDays = Array.from(document.querySelectorAll('.legend-item:not(.inactive)'))
         .map(item => item.dataset.day);
@@ -199,7 +227,6 @@ function filterMarkers() {
     });
 }
 
-// Obsługa kliknięć w elementy legendy
 document.querySelectorAll('.legend-item').forEach(item => {
     item.addEventListener('click', () => {
         item.classList.toggle('inactive');
@@ -207,13 +234,31 @@ document.querySelectorAll('.legend-item').forEach(item => {
     });
 });
 
-// Eksport funkcji deleteMarker do globalnego obiektu window
+async function initDailyCounter() {
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+    const counterRef = database.ref('counters/' + dateStr);
+    const counterSnapshot = await counterRef.once('value');
+    if (!counterSnapshot.exists()) {
+        await counterRef.set(0);
+    }
+}
+
+function refreshMarkers() {
+    loadMarkers();
+}
+
 window.deleteMarker = deleteMarker;
 
-// Wczytanie markerów przy starcie
+initDailyCounter();
 loadMarkers();
 
-// Obsługa zmiany rozmiaru okna
 window.addEventListener('resize', () => {
     map.invalidateSize();
 });
+
+// Dodaj przycisk do ręcznego odświeżania markerów
+const refreshButton = document.createElement('button');
+refreshButton.textContent = 'Odśwież markery';
+refreshButton.onclick = refreshMarkers;
+document.body.appendChild(refreshButton);
