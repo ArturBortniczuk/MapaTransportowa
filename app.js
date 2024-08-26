@@ -189,6 +189,11 @@ function loadMarkers() {
                 iconAnchor: [16, 32],
                 popupAnchor: [0, -32]
             });
+            icon.onerror = function() {
+                console.error('Błąd ładowania ikony:', iconUrl);
+                // Użyj domyślnej ikony w przypadku błędu
+                this.src = 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png';
+            };
 
             const marker = L.marker([lat, lon], { icon: icon, day: dayOfWeek }).addTo(map);
             markers[markerId] = marker;
