@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zaawansowana Mapa Firmowa</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            height: 100%;
+            overflow: hidden;
+        }
+        #map { 
+            height: 100vh; 
+            width: 100vw;
+        }
+        #addPinPanel, #legendPanel {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            transition: all 0.3s ease-in-out;
+            z-index: 1000;
+        }
+        #addPinPanel {
+            top: 10px;
+            right: -320px;
+            width: 300px;
+        }
+        #addPinPanel.visible {
+            right: 10px;
+        }
+        #legendPanel {
+            bottom: 50px;
+            left: -320px;
+            width: 300px;
+        }
+        #legendPanel.visible {
+            left: 10px;
+        }
+        #legendContent {
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+        .controlButton {
+            position: absolute;
+            z-index: 1001;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease-in-out;
+            font-weight: bold;
+        }
+        #addPinButton {
+            top: 20px;
+            right: 20px;
+        }
+        #addPinButton.panel-visible {
+            right: 340px;
+        }
+        #legendButton {
+            bottom: 20px;
+            left: 20px;
+        }
+        #closeLegendButton {
+            bottom: 10px;
+            left: -320px;
+            transition: all 0.3s ease-in-out;
+        }
+        #closeLegendButton.visible {
+            left: 10px;
+        }
+        .controlButton:hover {
+            background: #45a049;
+        }
+        #addPinForm input, #addPinForm select, #addPinForm button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        #addPinForm button {
+            background: #008CBA;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        #addPinForm button:hover {
+            background: #007B9A;
+        }
+        .leaflet-popup-content-wrapper {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            box-shadow: 0 3px 14px rgba(0,0,0,0.2);
+        }
+        .leaflet-popup-content {
+            margin: 15px;
+            font-size: 14px;
+        }
+        .delete-button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .delete-button:hover {
+            background: #cc0000;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+            user-select: none;
+            transition: opacity 0.3s ease;
+        }
+        .legend-item.inactive {
+            opacity: 0.5;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <button id="addPinButton" class="controlButton">➕ Dodaj pinezkę</button>
+    <button id="legendButton" class="controlButton">ℹ️ Legenda</button>
+    <button id="closeLegendButton" class="controlButton">❌ Zamknij</button>
+    <div id="addPinPanel">
+        <h3>Dodaj nową pinezkę</h3>
+        <form id="addPinForm">
+            <input type="text" id="pinName" placeholder="Nazwa" required>
+            <input type="text" id="pinAddress" placeholder="Adres" required>
+            <input type="text" id="pinCargo" placeholder="Towar" required>
+            <select id="carType" required>
+                <option value="">Wybierz auto</option>
+                <option value="blaszak_bialystok">Blaszak Białystok</option>
+                <option value="blaszak_zielonka">Blaszak Zielonka</option>
+                <option value="firanka_bialystok">Firanka Białystok</option>
+                <option value="firanka_zielonka">Firanka Zielonka</option>
+                <option value="man_stary_bialystok">Man stary Białystok</option>
+                <option value="man_nowy_bialystok">Man nowy Białystok</option>
+                <option value="man_zielonka">Man Zielonka</option>
+            </select>
+            <select id="dayOfWeek" required>
+                <option value="">Wybierz dzień tygodnia</option>
+                <option value="monday">Poniedziałek</option>
+                <option value="tuesday">Wtorek</option>
+                <option value="wednesday">Środa</option>
+                <option value="thursday">Czwartek</option>
+                <option value="friday">Piątek</option>
+            </select>
+            <input type="range" id="fillLevel" min="1" max="5" step="1" value="3">
+            <label for="fillLevel">Zapełnienie: <span id="fillLevelValue">3</span>/5</label>
+            <button type="submit">Dodaj pinezkę</button>
+        </form>
+    </div>
+    <div id="legendPanel">
+        <div id="legendContent">
+            <h3>Legenda - dni tygodnia</h3>
+            <div class="legend-item" data-day="monday">
+                <div class="legend-color" style="background: red;"></div>
+                Poniedziałek
+            </div>
+            <div class="legend-item" data-day="tuesday">
+                <div class="legend-color" style="background: pink;"></div>
+                Wtorek
+            </div>
+            <div class="legend-item" data-day="wednesday">
+                <div class="legend-color" style="background: green;"></div>
+                Środa
+            </div>
+            <div class="legend-item" data-day="thursday">
+                <div class="legend-color" style="background: black;"></div>
+                Czwartek
+            </div>
+            <div class="legend-item" data-day="friday">
+                <div class="legend-color" style="background: blue;"></div>
+                Piątek
+            </div>
+        </div>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([52.0, 19.0], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        const addPinButton = document.getElementById('addPinButton');
+        const legendButton = document.getElementById('legendButton');
+        const closeLegendButton = document.getElementById('closeLegendButton');
+        const addPinPanel = document.getElementById('addPinPanel');
+        const legendPanel = document.getElementById('legendPanel');
+        const addPinForm = document.getElementById('addPinForm');
+        const fillLevelSlider = document.getElementById('fillLevel');
+        const fillLevelValue = document.getElementById('fillLevelValue');
+
+        let markers = {};
+
+        addPinButton.addEventListener('click', () => {
+            addPinPanel.classList.toggle('visible');
+            addPinButton.classList.toggle('panel-visible');
+            addPinButton.textContent = addPinPanel.classList.contains('visible') ? '❌ Zamknij' : '➕ Dodaj pinezkę';
+            if (legendPanel.classList.contains('visible')) {
+                closeLegend();
+            }
+        });
+
+        legendButton.addEventListener('click', () => {
+            legendPanel.classList.add('visible');
+            closeLegendButton.classList.add('visible');
+            legendButton.style.display = 'none';
+            if (addPinPanel.classList.contains('visible')) {
+                addPinPanel.classList.remove('visible');
+                addPinButton.classList.remove('panel-visible');
+                addPinButton.textContent = '➕ Dodaj pinezkę';
+            }
+        });
+
+        closeLegendButton.addEventListener('click', closeLegend);
+
+        function closeLegend() {
+            legendPanel.classList.remove('visible');
+            closeLegendButton.classList.remove('visible');
+            legendButton.style.display = 'block';
+        }
+
+        fillLevelSlider.addEventListener('input', (e) => {
+            fillLevelValue.textContent = e.target.value;
+        });
+
+        addPinForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('pinName').value;
+            const address = document.getElementById('pinAddress').value;
+            const cargo = document.getElementById('pinCargo').value;
+            const carType = document.getElementById('carType').value;
+            const fillLevel = document.getElementById('fillLevel').value;
+            const dayOfWeek = document.getElementById('dayOfWeek').value;
+
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
+                const data = await response.json();
+                if (data.length > 0) {
+                    const { lat, lon } = data[0];
+                    const city = data[0].display_name.split(',')[0];
+                    addMarker(lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek);
+                    addPinPanel.classList.remove('visible');
+                    addPinButton.classList.remove('panel-visible');
+                    addPinButton.textContent = '➕ Dodaj pinezkę';
+                    addPinForm.reset();
+                    fillLevelValue.textContent = '3';
+                } else {
+                    alert('Nie udało się znaleźć podanego adresu.');
+                }
+            } catch (error) {
+                console.error('Błąd podczas geokodowania:', error);
+                alert('Wystąpił błąd podczas dodawania pinezki.');
+            }
+        });
+
+        function addMarker(lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek) {
+            const carTypeMap = {
+                'blaszak_bialystok': 'blaszak',
+                'blaszak_zielonka': 'blaszak',
+                'firanka_bialystok': 'firanka',
+                'firanka_zielonka': 'firanka',
+                'man_stary_bialystok': 'man',
+                'man_nowy_bialystok': 'man',
+                'man_zielonka': 'man'
+            };
+
+            const polishDayNames = {
+                'monday': 'Poniedziałek',
+                'tuesday': 'Wtorek',
+                'wednesday': 'Środa',
+                'thursday': 'Czwartek',
+                'friday': 'Piątek'
+            };
+
+            const iconType = carTypeMap[carType];
+            const iconUrl = `static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
+            
+            console.log('Próba załadowania ikony:', iconUrl);
+            
+            const icon = L.icon({
+                iconUrl: iconUrl,
+                iconSize: [32, 32],
+                iconAnchor: [16, 32],
+                popupAnchor: [0, -32]
+            });
+            
+            const marker = L.marker([lat, lon], { icon: icon, day: dayOfWeek }).addTo(map);
+            const markerId = Date.now().toString();
+            markers[markerId] = marker;
+
+            const popupContent = `
+                <b>${name}</b><br>
+                Miasto: ${city}<br>
+                Auto: ${carType.replace(/_/g, ' ')}<br>
+                Dzień: ${polishDayNames[dayOfWeek]}<br>
+                Towar: ${cargo}<br>
+                Zapełnienie: ${fillLevel}/5<br>
+                <button class="delete-button" onclick="deleteMarker('${markerId}')">Usuń pinezkę</button>
+            `;
+            marker.bindPopup(popupContent);
+
+            saveMarkers();
+            filterMarkers();
+        }
+
+        function deleteMarker(markerId) {
+            if (markers[markerId]) {
+                map.removeLayer(markers[markerId]);
+                delete markers[markerId];
+                saveMarkers();
+            }
+        }
+
+        function saveMarkers() {
+            const markersData = Object.entries(markers).map(([id, marker]) => {
+                const latlng = marker.getLatLng();
+                const popup = marker.getPopup();
+                const content = popup.getContent();
+                // Ekstrakcja danych z popupu
+                const name = content.match(/<b>(.*?)<\/b>/)[1];
+                const city = content.match(/Miasto: (.*?)<br>/)[1];
+                const carType = content.match(/Auto: (.*?)<br>/)[1];
+                const dayName = content.match(/Dzień: (.*?)<br>/)[1];
+                const cargo = content.match(/Towar: (.*?)<br>/)[1];
+                const fillLevel = content.match(/Zapełnienie: (.*?)\/5/)[1];
+                return {
+                    id,
+                    lat: latlng.lat,
+                    lng: latlng.lng,
+                    name,
+                    city,
+                    carType,
+                    dayName,
+                    cargo,
+                    fillLevel
+                };
+            });
+            localStorage.setItem('mapMarkers', JSON.stringify(markersData));
+        }
+
+        function loadMarkers() {
+            const savedMarkers = JSON.parse(localStorage.getItem('mapMarkers')) || [];
+            savedMarkers.forEach(markerData => {
+                addMarker(markerData.lat, markerData.lng, markerData.name, markerData.cargo, markerData.carType, markerData.fillLevel, markerData.city, markerData.dayName);
+            });
+        }
+
+        function filterMarkers() {
+            const activeDays = Array.from(document.querySelectorAll('.legend-item:not(.inactive)'))
+                .map(item => item.dataset.day);
+
+            Object.values(markers).forEach(marker => {
+                const markerDay = marker.options.day;
+                if (activeDays.includes(markerDay)) {
+                    if (!map.hasLayer(marker)) {
+                        map.addLayer(marker);
+                    }
+                } else {
+                    if (map.hasLayer(marker)) {
+                        map.removeLayer(marker);
+                    }
+                }
+            });
+        }
+
+        document.querySelectorAll('.legend-item').forEach(item => {
+            item.addEventListener('click', () => {
+                item.classList.toggle('inactive');
+                filterMarkers();
+            });
+        });
+
+        window.deleteMarker = deleteMarker;
+
+        loadMarkers();
+        filterMarkers();
+
+        window.addEventListener('resize', () => {
+            map.invalidateSize();
+        });
+    </script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script>
+  // Konfiguracja Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBF4S5gir1yKPjQ8wap6X34jUov0pf1kkY",
+  authDomain: "bazatransportowaeltron.firebaseapp.com",
+  databaseURL: "https://bazatransportowaeltron-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "bazatransportowaeltron",
+  storageBucket: "bazatransportowaeltron.appspot.com",
+  messagingSenderId: "1036519264279",
+  appId: "1:1036519264279:web:fc5b0842c3dae9e1704c52",
+  measurementId: "G-0V590P6QG3"
+};
+  // Inicjalizacja Firebase
+  firebase.initializeApp(firebaseConfig);
+</script>
+<script src="app.js"></script>
+</body>
+</html>
