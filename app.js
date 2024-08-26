@@ -181,7 +181,7 @@ function loadMarkers() {
             const { lat, lon, name, cargo, carType, fillLevel, city, dayOfWeek, recordName } = markerData;
 
             const iconType = carTypeMap[carType];
-            const iconUrl = `/static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
+            const iconUrl = `static/${iconType}_${fillLevel}_${dayOfWeek}.png`;
             
             const icon = L.icon({
                 iconUrl: iconUrl,
