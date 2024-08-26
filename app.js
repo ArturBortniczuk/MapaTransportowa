@@ -116,7 +116,7 @@ const addMarker = debounce(async function(lat, lon, name, cargo, carType, fillLe
         if (markerData.lon === lon && markerData.active) {
             existingMarker = { key: childSnapshot.key, ...markerData };
             return true; // Przerywa pętlę forEach
-        }, 300);
+        }
     });
 
     let markerId;
